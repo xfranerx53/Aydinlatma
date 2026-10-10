@@ -1,4 +1,4 @@
-const AD = 'isik-v1';
+const AD = 'isik-v2';
 const DOSYALAR = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
