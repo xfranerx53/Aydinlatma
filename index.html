@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Işık">
+<title>Işık Kontrol</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:#111;color:#eee;padding:16px;padding-top:max(16px,env(safe-area-inset-top))}
+  h1{font-size:22px;text-align:center;margin:4px 0 14px}
+  h2{font-size:18px;margin:0}
+  h3{font-size:14px;color:#aaa;margin:16px 0 6px}
+  .kart{background:#222;border-radius:16px;padding:18px;margin:14px auto;max-width:380px}
+  .ust{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .rozet{font-size:12px;padding:3px 10px;border-radius:20px;background:#333;color:#999}
+  .rozet.on{background:#1b4d2b;color:#7dffa0}
+  .durum{font-size:22px;text-align:center;margin:10px 0 14px;color:#888}
+  .durum.acik{color:#ffd54a}
+  button{font:inherit;border:0;border-radius:12px;color:#fff;background:#2d7ff9;padding:13px 20px}
+  button.buyuk{width:100%;font-size:19px}
+  button.kucuk{font-size:14px;padding:8px 18px;margin-top:6px}
+  button.gri{background:#444}
+  button:disabled{opacity:.5}
+  .slot{background:#2c2c2c;border-radius:10px;padding:10px;margin:8px 0}
+  .gun{display:inline-block;margin:3px 8px 3px 0;font-size:13px}
+  input,select{font:inherit;font-size:16px;padding:6px;border-radius:8px;border:0;background:#3a3a3a;color:#eee}
+  #giris input{width:100%;margin:6px 0}
+  #hata{color:#ff7b7b;font-size:14px;min-height:18px;margin:6px 0}
+  .gizli{display:none}
+  #cik{display:block;margin:20px auto 0}
+</style>
+</head>
+<body>
+<h1>💡 Işık Kontrol</h1>
+
+<div id="giris" class="kart gizli">
+  <h2>Giriş</h2>
+  <input id="mail" type="email" placeholder="E-posta" autocomplete="username">
+  <input id="sifre" type="password" placeholder="Şifre" autocomplete="current-password">
+  <div id="hata"></div>
+  <button class="buyuk" onclick="girisYap()">Giriş yap</button>
+</div>
+
+<div id="uygulama" class="gizli">
+  <div id="odalar"></div>
+  <button id="cik" class="gri kucuk" onclick="auth.signOut()">Çıkış</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyCGGfToAOWY-OF0WZO6H0bnWaIRR0io248",
+  authDomain: "aydinlatma-cf889.firebaseapp.com",
+  databaseURL: "https://aydinlatma-cf889-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "aydinlatma-cf889",
+  storageBucket: "aydinlatma-cf889.firebasestorage.app",
+  messagingSenderId: "64167449565",
+  appId: "1:64167449565:web:b9f3486e9a4c14d1531c34"
+});
+const auth = firebase.auth();
+const db = firebase.database();
+const G = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
+const p2 = n => (n<10?'0':'')+n;
+let dinleyici = null;
+const kuruldu = {};
+
+function girisYap(){
+  document.getElementById('hata').textContent = '';
+  auth.signInWithEmailAndPassword(
+    document.getElementById('mail').value.trim(),
+    document.getElementById('sifre').value
+  ).catch(()=>{ document.getElementById('hata').textContent = 'E-posta veya şifre hatalı.'; });
+}
+
+auth.onAuthStateChanged(u=>{
+  document.getElementById('giris').classList.toggle('gizli', !!u);
+  document.getElementById('uygulama').classList.toggle('gizli', !u);
+  if(dinleyici){ dinleyici.off(); dinleyici = null; }
+  if(u){
+    iskeletKur();
+    dinleyici = db.ref('oda');
+    dinleyici.on('value', s => ciz(s.val() || {}));
+  }
+});
+
+function iskeletKur(){
+  const kap = document.getElementById('odalar');
+  if(kap.children.length) return;
+  [1,2].forEach(n=>{
+    const d = document.createElement('div');
+    d.className = 'kart';
+    d.innerHTML =
+      '<div class="ust"><h2>Oda '+n+'</h2><span class="rozet" id="r'+n+'">çevrimdışı</span></div>'+
+      '<div class="durum" id="d'+n+'">...</div>'+
+      '<button class="buyuk" id="b'+n+'" onclick="degistir('+n+')">Aç / Kapat</button>'+
+      '<h3>Zamanlama</h3><div id="z'+n+'"></div>';
+    kap.appendChild(d);
+  });
+}
+
+const sonDurum = {};
+function ciz(veri){
+  [1,2].forEach(n=>{
+    const o = veri[n] || {};
+    const acik = o.durum === 1;
+    sonDurum[n] = acik;
+    const cevrimici = o.son && (Date.now()/1000 - o.son) < 120;
+    const r = document.getElementById('r'+n);
+    r.textContent = cevrimici ? 'çevrimiçi' : 'çevrimdışı';
+    r.className = 'rozet' + (cevrimici ? ' on' : '');
+    const d = document.getElementById('d'+n);
+    d.textContent = o.durum === undefined ? '—' : (acik ? 'IŞIK AÇIK' : 'IŞIK KAPALI');
+    d.className = 'durum' + (acik ? ' acik' : '');
+    document.getElementById('b'+n).disabled = false;
+    if(!kuruldu[n]){
+      kuruldu[n] = true;
+      zamanKur(n, o.zaman || {});
+    }
+  });
+}
+
+function degistir(n){
+  const b = document.getElementById('b'+n);
+  b.disabled = true;
+  db.ref('oda/'+n+'/komut').set({ d: sonDurum[n] ? 0 : 1, t: firebase.database.ServerValue.TIMESTAMP })
+    .catch(()=>{ b.disabled = false; });
+  setTimeout(()=>{ b.disabled = false; }, 6000);
+}
+
+function zamanKur(n, z){
+  const el = document.getElementById('z'+n);
+  el.innerHTML = '';
+  for(let i=0;i<4;i++){
+    const a = z[i] || {aktif:0,gunler:127,saat:0,dakika:0,eylem:1};
+    const d = document.createElement('div');
+    d.className = 'slot';
+    let h = '<label><input type="checkbox" id="a'+n+i+'"'+(a.aktif?' checked':'')+'> Aktif</label> ';
+    h += '<input type="time" id="t'+n+i+'" value="'+p2(a.saat)+':'+p2(a.dakika)+'"> ';
+    h += '<select id="e'+n+i+'"><option value="1"'+(a.eylem==1?' selected':'')+'>Aç</option><option value="0"'+(a.eylem==0?' selected':'')+'>Kapat</option></select><br>';
+    for(let g=0;g<7;g++){
+      h += '<label class="gun"><input type="checkbox" id="g'+n+i+g+'"'+(((a.gunler>>g)&1)?' checked':'')+'>'+G[g]+'</label>';
+    }
+    h += '<br><button class="kucuk" onclick="kaydet('+n+','+i+',this)">Kaydet</button>';
+    d.innerHTML = h;
+    el.appendChild(d);
+  }
+}
+
+function kaydet(n,i,btn){
+  let g = 0;
+  for(let k=0;k<7;k++){ if(document.getElementById('g'+n+i+k).checked) g |= (1<<k); }
+  const t = (document.getElementById('t'+n+i).value || '00:00').split(':');
+  db.ref('oda/'+n+'/zaman/'+i).set({
+    aktif: document.getElementById('a'+n+i).checked ? 1 : 0,
+    gunler: g,
+    saat: parseInt(t[0]),
+    dakika: parseInt(t[1]),
+    eylem: parseInt(document.getElementById('e'+n+i).value)
+  }).then(()=>{
+    const y = btn.textContent; btn.textContent = 'Kaydedildi ✓';
+    setTimeout(()=>{ btn.textContent = y; }, 1500);
+  }).catch(()=>{ btn.textContent = 'Hata!'; });
+}
+
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js'); }
+</script>
+</body>
+</html>
